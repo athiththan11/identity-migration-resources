@@ -1,18 +1,18 @@
 /*
-* Copyright (c) 2018, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-* http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * Copyright (c) 2018, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.wso2.carbon.is.migration.service.v550.dao;
 
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
@@ -27,19 +27,23 @@ import java.util.List;
 
 import static org.wso2.carbon.is.migration.service.v550.SQLConstants.ADD_AUTHORIZATION_CODE_HASH_COLUMN;
 import static org.wso2.carbon.is.migration.service.v550.SQLConstants.RETRIEVE_ALL_AUTHORIZATION_CODES;
-import static org.wso2.carbon.is.migration.service.v550.SQLConstants.RETRIEVE_ALL_AUTHORIZATION_CODES_WITH_HASHES;
+import static org.wso2.carbon.is.migration.service.v550.SQLConstants.RETRIEVE_PAGINATED_AUTHORIZATION_CODES_WITH_HASHES_MYSQL;
+import static org.wso2.carbon.is.migration.service.v550.SQLConstants.RETRIEVE_PAGINATED_AUTHORIZATION_CODES_WITH_HASHES_OTHER;
 import static org.wso2.carbon.is.migration.service.v550.SQLConstants.RETRIEVE_AUTHORIZATION_CODE_TABLE_DB2SQL;
 import static org.wso2.carbon.is.migration.service.v550.SQLConstants.RETRIEVE_AUTHORIZATION_CODE_TABLE_INFORMIX;
 import static org.wso2.carbon.is.migration.service.v550.SQLConstants.RETRIEVE_AUTHORIZATION_CODE_TABLE_MSSQL;
 import static org.wso2.carbon.is.migration.service.v550.SQLConstants.RETRIEVE_AUTHORIZATION_CODE_TABLE_MYSQL;
 import static org.wso2.carbon.is.migration.service.v550.SQLConstants.RETRIEVE_AUTHORIZATION_CODE_TABLE_ORACLE;
-import static org.wso2.carbon.is.migration.service.v550.SQLConstants.UPDATE_PLAIN_TEXT_AUTHORIZATION_CODE;
 import static org.wso2.carbon.is.migration.service.v550.SQLConstants.UPDATE_ENCRYPTED_AUTHORIZATION_CODE;
+import static org.wso2.carbon.is.migration.service.v550.SQLConstants.UPDATE_PLAIN_TEXT_AUTHORIZATION_CODE;
 
+/**
+ * AuthzCodeDAO.
+ */
 public class AuthzCodeDAO {
 
-    private static AuthzCodeDAO instance = new AuthzCodeDAO();
     private static final String AUTHORIZATION_CODE_HASH = "AUTHORIZATION_CODE_HASH";
+    private static AuthzCodeDAO instance = new AuthzCodeDAO();
 
     private AuthzCodeDAO() {
 
@@ -95,7 +99,8 @@ public class AuthzCodeDAO {
     }
 
     /**
-     * Method to retrieve all the authorization codes from the database
+     * Method to retrieve all the authorization codes from the database.
+     *
      * @param connection
      * @return list of authorization codes
      * @throws SQLException
@@ -104,7 +109,7 @@ public class AuthzCodeDAO {
 
         List<AuthzCodeInfo> authzCodeInfoList = new ArrayList<>();
         try (PreparedStatement preparedStatement = connection.prepareStatement(RETRIEVE_ALL_AUTHORIZATION_CODES);
-                ResultSet resultSet = preparedStatement.executeQuery()) {
+             ResultSet resultSet = preparedStatement.executeQuery()) {
             while (resultSet.next()) {
                 authzCodeInfoList.add(new AuthzCodeInfo(resultSet.getString("AUTHORIZATION_CODE"),
                         resultSet.getString("CODE_ID")));
@@ -120,17 +125,40 @@ public class AuthzCodeDAO {
      * @return List of authorization codes.
      * @throws SQLException If an error occurs while retrieving codes.
      */
-    public List<AuthzCodeInfo> getAllAuthzCodesWithHashes(Connection connection) throws SQLException {
+    public List<AuthzCodeInfo> getAllAuthzCodesWithHashes(Connection connection, int offset, int limit)
+            throws SQLException {
+
+        String sql;
+        boolean mysqlQueriesUsed = false;
+        if (connection.getMetaData().getDriverName().contains("MySQL")
+                // We can't use the similar thing like above with DB2. Check
+                // https://www.ibm.com/support/knowledgecenter/en/SSEPEK_10.0.0/java/src/tpc/imjcc_rjvjdapi.html#imjcc_rjvjdapi__d70364e1426
+                || connection.getMetaData().getDatabaseProductName().contains("DB2")
+                || connection.getMetaData().getDriverName().contains("H2")
+                || connection.getMetaData().getDriverName().contains("PostgreSQL")) {
+            sql = RETRIEVE_PAGINATED_AUTHORIZATION_CODES_WITH_HASHES_MYSQL;
+            mysqlQueriesUsed = true;
+        } else {
+            sql = RETRIEVE_PAGINATED_AUTHORIZATION_CODES_WITH_HASHES_OTHER;
+        }
 
         List<AuthzCodeInfo> authzCodeInfoList = new ArrayList<>();
-        try (PreparedStatement preparedStatement = connection.prepareStatement
-                (RETRIEVE_ALL_AUTHORIZATION_CODES_WITH_HASHES);
-             ResultSet resultSet = preparedStatement.executeQuery()) {
-            while (resultSet.next()) {
-                AuthzCodeInfo authzCodeInfo = new AuthzCodeInfo(resultSet.getString("AUTHORIZATION_CODE"),
-                                                                resultSet.getString("CODE_ID"));
-                authzCodeInfo.setAuthorizationCodeHash(resultSet.getString("AUTHORIZATION_CODE_HASH"));
-                authzCodeInfoList.add(authzCodeInfo);
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+            // In mysql type queries, limit and offset values are changed.
+            if (mysqlQueriesUsed) {
+                preparedStatement.setInt(1, limit);
+                preparedStatement.setInt(2, offset);
+            } else {
+                preparedStatement.setInt(1, offset);
+                preparedStatement.setInt(2, limit);
+            }
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                while (resultSet.next()) {
+                    AuthzCodeInfo authzCodeInfo = new AuthzCodeInfo(resultSet.getString("AUTHORIZATION_CODE"),
+                            resultSet.getString("CODE_ID"));
+                    authzCodeInfo.setAuthorizationCodeHash(resultSet.getString("AUTHORIZATION_CODE_HASH"));
+                    authzCodeInfoList.add(authzCodeInfo);
+                }
             }
         }
         return authzCodeInfoList;
@@ -138,12 +166,14 @@ public class AuthzCodeDAO {
 
     /**
      * Method to update the authorization code table with updated authorization codes.
+     *
      * @param updatedAuthzCodeList List of updated authorization codes
-     * @param connection database connection
+     * @param connection           database connection
      * @throws SQLException
      */
     public void updateNewEncryptedAuthzCodes(List<AuthzCodeInfo> updatedAuthzCodeList, Connection connection)
             throws SQLException, MigrationClientException {
+
         connection.setAutoCommit(false);
         try (PreparedStatement preparedStatement = connection.prepareStatement(UPDATE_ENCRYPTED_AUTHORIZATION_CODE)) {
             for (AuthzCodeInfo authzCodeInfo : updatedAuthzCodeList) {
@@ -170,6 +200,7 @@ public class AuthzCodeDAO {
      */
     public void updatePlainTextAuthzCodes(List<AuthzCodeInfo> updatedAuthzCodeList, Connection connection)
             throws SQLException, MigrationClientException {
+
         connection.setAutoCommit(false);
         try (PreparedStatement preparedStatement = connection.prepareStatement(UPDATE_PLAIN_TEXT_AUTHORIZATION_CODE)) {
             for (AuthzCodeInfo authzCodeInfo : updatedAuthzCodeList) {
@@ -184,6 +215,5 @@ public class AuthzCodeDAO {
             throw new MigrationClientException("SQL error while update plain text authz codes.", e);
         }
     }
-
 
 }

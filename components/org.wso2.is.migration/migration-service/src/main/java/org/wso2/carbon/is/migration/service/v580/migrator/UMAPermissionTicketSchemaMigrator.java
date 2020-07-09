@@ -16,8 +16,8 @@
 
 package org.wso2.carbon.is.migration.service.v580.migrator;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
 import org.wso2.carbon.identity.core.util.IdentityDatabaseUtil;
 import org.wso2.carbon.is.migration.service.SchemaMigrator;
@@ -32,9 +32,15 @@ import static org.wso2.carbon.is.migration.util.SchemaUtil.isColumnExist;
  */
 public class UMAPermissionTicketSchemaMigrator extends SchemaMigrator {
 
-    private static final Log log = LogFactory.getLog(UMAPermissionTicketSchemaMigrator.class);
+    private static final Logger log = LoggerFactory.getLogger(UMAPermissionTicketSchemaMigrator.class);
     private static final String COLUMN_NAME_TOKEN_ID = "TOKEN_ID";
     private static final String TABLE_NAME_IDN_UMA_PERMISSION_TICKET = "IDN_UMA_PERMISSION_TICKET";
+
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
+    }
 
     @Override
     public void migrate() throws MigrationClientException {
@@ -43,11 +49,11 @@ public class UMAPermissionTicketSchemaMigrator extends SchemaMigrator {
             if (!isColumnExist(connection, COLUMN_NAME_TOKEN_ID, TABLE_NAME_IDN_UMA_PERMISSION_TICKET)) {
 
                 log.info(COLUMN_NAME_TOKEN_ID + " column does not exist in the table " +
-                         TABLE_NAME_IDN_UMA_PERMISSION_TICKET + ". Hence adding the column.");
+                        TABLE_NAME_IDN_UMA_PERMISSION_TICKET + ". Hence adding the column.");
                 super.migrate();
             } else {
                 log.info(COLUMN_NAME_TOKEN_ID + " column already exist in the table " +
-                         TABLE_NAME_IDN_UMA_PERMISSION_TICKET + ". Hence skipping.");
+                        TABLE_NAME_IDN_UMA_PERMISSION_TICKET + ". Hence skipping.");
             }
         } catch (SQLException e) {
             log.error("Error while obtaining connection from identity data source.", e);

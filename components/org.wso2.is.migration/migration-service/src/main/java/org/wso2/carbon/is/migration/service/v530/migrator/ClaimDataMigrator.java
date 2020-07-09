@@ -19,8 +19,8 @@
 package org.wso2.carbon.is.migration.service.v530.migrator;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.identity.base.IdentityRuntimeException;
 import org.wso2.carbon.identity.claim.metadata.mgt.dao.CacheBackedLocalClaimDAO;
 import org.wso2.carbon.identity.claim.metadata.mgt.dao.ClaimDialectDAO;
@@ -61,21 +61,23 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import javax.xml.stream.XMLStreamException;
 
 import static org.wso2.carbon.is.migration.util.Constant.MIGRATION_LOG;
 import static org.wso2.carbon.is.migration.util.Constant.SUPER_TENANT_ID;
 
-public class ClaimDataMigrator extends Migrator{
+/**
+ * ClaimDataMigrator.
+ */
+public class ClaimDataMigrator extends Migrator {
 
-    private static Log log = LogFactory.getLog(ClaimDataMigrator.class);
+    private static final String CLAIM_CONFIG = "claim-config.xml";
+    private static Logger log = LoggerFactory.getLogger(ClaimDataMigrator.class);
     //Is validation success. If not success, it will be created additional calims to be success
     private boolean isSuccess = true;
     //This is used to record error log
     private int count = 1;
-
-    private static final String CLAIM_CONFIG = "claim-config.xml";
-
     private ClaimConfig claimConfig;
 
     private ClaimDialectDAO claimDialectDAO = new ClaimDialectDAO();
@@ -84,11 +86,18 @@ public class ClaimDataMigrator extends Migrator{
 
     @Override
     public void migrate() throws MigrationClientException {
+
         migrateClaimData();
     }
 
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
+    }
 
     public boolean migrateClaimData() throws MigrationClientException {
+
         List<Claim> claims = new ArrayList<>();
         Connection umConnection = null;
 
@@ -99,12 +108,10 @@ public class ClaimDataMigrator extends Migrator{
         ResultSet claimResultSet = null;
         StringBuilder report = new StringBuilder();
         report.append("---------------------------------- WSO2 Identity Server 5.3.0 claim Migration Report " +
-                      "-----------------------------------------\n \n");
-
+                "-----------------------------------------\n \n");
 
         report.append("\n\n------------------------------------------------- Validating Existing Claims" +
-                      "----------------------------------------------\n \n");
-
+                "----------------------------------------------\n \n");
 
         try {
 
@@ -146,7 +153,7 @@ public class ClaimDataMigrator extends Migrator{
 
                     //Read all records in UM_CLAIM one by one
                     processClaimResultSet(claims, claimResultSet, mappedAttributes, dialect.getDialectUri(),
-                                          dialect.getTenantId());
+                            dialect.getTenantId());
                 } finally {
                     IdentityDatabaseUtil.closeResultSet(claimResultSet);
                     IdentityDatabaseUtil.closeStatement(loadMappedAttributeStatement);
@@ -183,7 +190,6 @@ public class ClaimDataMigrator extends Migrator{
             IdentityDatabaseUtil.closeConnection(umConnection);
         }
 
-
         // Migrating claim Data starts here.
         migrateClaimData(claims, report);
         return isSuccess;
@@ -191,6 +197,7 @@ public class ClaimDataMigrator extends Migrator{
 
     private void processDialects(ResultSet dialects, Map<Integer, Dialect> dialectMap, List<Integer> inactiveTenants)
             throws SQLException {
+
         while (dialects.next()) {
 
             int dialectId = dialects.getInt("UM_ID");
@@ -199,7 +206,7 @@ public class ClaimDataMigrator extends Migrator{
 
             if (isIgnoreForInactiveTenants() && inactiveTenants.contains(tenantId)) {
                 log.info("Inactive tenant : " + tenantId + " , " +
-                         "Skipping claim data migration for dialect : " + dialectUri);
+                        "Skipping claim data migration for dialect : " + dialectUri);
                 continue;
             }
             Dialect dialect = new Dialect(dialectId, dialectUri, tenantId);
@@ -208,13 +215,14 @@ public class ClaimDataMigrator extends Migrator{
     }
 
     private void migrateClaimData(List<Claim> claims, StringBuilder report) {
+
         ClaimManager claimManager = ClaimManager.getInstance();
 
         if (claims != null) {
 
             report.append("\n\n------------------------------------------------------------------------------ Claim " +
-                          "Migration ---------------------------------------------------------------------------" +
-                          "----\n \n");
+                    "Migration ---------------------------------------------------------------------------" +
+                    "----\n \n");
             try {
                 // Add Claim Dialects
                 claimManager.addClaimDialects(claims, report);
@@ -256,7 +264,7 @@ public class ClaimDataMigrator extends Migrator{
         } catch (IdentityRuntimeException e) {
             if (e.getMessage().contains("Can not find the tenant domain for the tenant id")) {
                 String errorMessage = "Error while migrating data. " + e.getMessage() + " for tenantId : " +
-                                      tenantId;
+                        tenantId;
                 log.error(errorMessage);
                 if (log.isDebugEnabled()) {
                     log.debug(errorMessage, e);
@@ -274,7 +282,7 @@ public class ClaimDataMigrator extends Migrator{
         } catch (IdentityRuntimeException e) {
             if (e.getMessage().contains("Can not find the tenant domain for the tenant id")) {
                 String errorMessage = "Error while migrating data. " + e.getMessage() + " for tenantId : " +
-                                      tenantId;
+                        tenantId;
                 log.error(errorMessage);
                 if (log.isDebugEnabled()) {
                     log.debug(errorMessage, e);
@@ -301,7 +309,7 @@ public class ClaimDataMigrator extends Migrator{
             boolean isReadOnly = readOnly == 1;
 
             Claim claimDTO = new Claim(claimURI, displayTag, description, regEx, isSupportedByDefault,
-                                       isRequired, displayOrder, isReadOnly, tenantId, dialectUri);
+                    isRequired, displayOrder, isReadOnly, tenantId, dialectUri);
             if (claims.contains(claimDTO)) {
                 for (Claim claim : claims) {
                     if (claim.equals(claimDTO)) {
@@ -358,15 +366,15 @@ public class ClaimDataMigrator extends Migrator{
                                         claimsToAdd.add(remoteClaimAttribute);
                                         isSuccess = false;
                                         report.append("\n\n" + count + ")  Mapped Attribute : " +
-                                                      remoteClaimAttribute + " in dialect :" + dialect.getKey() +
-                                                      " is not associated to any of the local claim in " +
-                                                      "tenant domain: " + tenantDomain);
+                                                remoteClaimAttribute + " in dialect :" + dialect.getKey() +
+                                                " is not associated to any of the local claim in " +
+                                                "tenant domain: " + tenantDomain);
 
                                         if (log.isDebugEnabled()) {
                                             log.debug("Mapped Attribute : " + remoteClaimAttribute +
-                                                      " in dialect :" + dialect.getKey() +
-                                                      " is not associated to any of the local claim in" +
-                                                      " tenant domain: " + tenantDomain);
+                                                    " in dialect :" + dialect.getKey() +
+                                                    " is not associated to any of the local claim in" +
+                                                    " tenant domain: " + tenantDomain);
                                         }
                                         count++;
                                     }
@@ -403,21 +411,21 @@ public class ClaimDataMigrator extends Migrator{
         if (entry.getValue() != null) {
             for (Map.Entry<String, List<String>> claimEntry : entry.getValue().entrySet()) {
                 String mappedAttribute = claimEntry.getKey();
-                if(mappedAttribute != null) {
+                if (mappedAttribute != null) {
                     attributes.add(mappedAttribute.trim());
                     if (claimEntry.getValue() != null && claimEntry.getValue().size() > 1) {
                         isSuccess = false;
 
                         report.append(count + ")  Duplicate Mapped Attribute found for dialect :" + dialect +
-                                      " | Mapped Attribute :" + mappedAttribute + " | " +
-                                      "Relevant Claims : " + claimEntry.getValue() + " | Tenant Domain :"
-                                      + tenantDomain);
+                                " | Mapped Attribute :" + mappedAttribute + " | " +
+                                "Relevant Claims : " + claimEntry.getValue() + " | Tenant Domain :"
+                                + tenantDomain);
                         report.append("\n\n");
                         if (log.isDebugEnabled()) {
                             log.debug("Duplicate Mapped Attribute found for dialect :" + dialect +
-                                      " | Mapped Attribute :" + mappedAttribute + " | " +
-                                      "Relevant Claims : " + claimEntry.getValue() + " | Tenant Domain :"
-                                      + tenantDomain);
+                                    " | Mapped Attribute :" + mappedAttribute + " | " +
+                                    "Relevant Claims : " + claimEntry.getValue() + " | Tenant Domain :"
+                                    + tenantDomain);
                         }
 
                         count++;

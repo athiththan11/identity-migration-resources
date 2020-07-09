@@ -2,10 +2,10 @@ package org.wso2.carbon.is.migration.service.v570.migrator;
 
 import org.apache.commons.io.Charsets;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.core.util.CryptoException;
 import org.wso2.carbon.core.util.CryptoUtil;
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
@@ -24,86 +24,127 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
+/**
+ * OAuthDataMigrator.
+ */
 public class OAuthDataMigrator extends Migrator {
 
-    private static final Log log = LogFactory.getLog(OAuthDataMigrator.class);
-    private static String hashingAlgo = OAuthServerConfiguration.getInstance().getHashAlgorithm();
+    private static final Logger log = LoggerFactory.getLogger(OAuthDataMigrator.class);
+
     private static final String ALGORITHM = "algorithm";
     private static final String HASH = "hash";
+    private static final String LIMIT = "batchSize";
+
+    private static final int DEFAULT_CHUNK_SIZE = 10000;
+    private static String hashingAlgo = OAuthServerConfiguration.getInstance().getHashAlgorithm();
 
     @Override
     public void migrate() throws MigrationClientException {
 
-        migrateTokenHash();
-        migrateAuthzCodeHash();
+        // Get the batch size from the configuration if it is provided. Or else use the default size of 10000.
+        Properties migrationProperties = getMigratorConfig().getParameters();
+        int chunkSize = DEFAULT_CHUNK_SIZE;
+        if (migrationProperties.containsKey(LIMIT)) {
+            chunkSize = (int) migrationProperties.get(LIMIT);
+        }
+
+        migrateTokenHash(chunkSize);
+        migrateAuthzCodeHash(chunkSize);
     }
 
-    public void migrateTokenHash() throws MigrationClientException {
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
+    }
+
+    public void migrateTokenHash(int chunkSize) throws MigrationClientException {
 
         log.info(Constant.MIGRATION_LOG + "Migration starting on OAuth2 access token table.");
 
-        List<OauthTokenInfo> tokenInfoList = getTokenList();
-        try {
-            List<OauthTokenInfo> updateTokenInfoList = updateHashColumnValues(tokenInfoList, hashingAlgo);
-            try (Connection connection = getDataSource().getConnection()) {
-                connection.setAutoCommit(false);
-                //persists modified hash values
-                try {
-                    OAuthDAO.getInstance().updateNewTokenHash(updateTokenInfoList, connection);
-                    connection.commit();
-                } catch (SQLException e1) {
-                    connection.rollback();
-                    String error = "SQL error while updating token hash";
-                    throw new MigrationClientException(error, e1);
-                }
-            } catch (SQLException e) {
-                String error = "SQL error while updating token hash";
-                throw new MigrationClientException(error, e);
-            }
-        } catch (CryptoException e) {
-            throw new MigrationClientException("Error while encrypting tokens.", e);
-        } catch (IdentityOAuth2Exception e) {
-            throw new MigrationClientException("Error while migrating tokens.", e);
-        }
+        int offset = 0;
+        log.info("Offset is set to {} and limit is set to {}", offset, chunkSize);
 
+        while (true) {
+            List<OauthTokenInfo> tokenInfoList = getTokenList(offset, chunkSize);
+            if (tokenInfoList.isEmpty()) {
+                break;
+            }
+            try {
+                List<OauthTokenInfo> updateTokenInfoList = updateHashColumnValues(tokenInfoList, hashingAlgo);
+                try (Connection connection = getDataSource().getConnection()) {
+                    connection.setAutoCommit(false);
+                    // Persists modified hash values.
+                    try {
+                        OAuthDAO.getInstance().updateNewTokenHash(updateTokenInfoList, connection);
+                        connection.commit();
+                        log.info("Access token migration completed for tokens {} to {} ", offset, chunkSize);
+                        offset += tokenInfoList.size();
+                    } catch (SQLException e1) {
+                        connection.rollback();
+                        String error = "SQL error while updating token hash";
+                        throw new MigrationClientException(error, e1);
+                    }
+                } catch (SQLException e) {
+                    String error = "SQL error while updating token hash";
+                    throw new MigrationClientException(error, e);
+                }
+            } catch (CryptoException e) {
+                throw new MigrationClientException("Error while encrypting tokens.", e);
+            } catch (IdentityOAuth2Exception e) {
+                throw new MigrationClientException("Error while migrating tokens.", e);
+            }
+        }
     }
 
-    public void migrateAuthzCodeHash() throws MigrationClientException {
+    public void migrateAuthzCodeHash(int chunkSize) throws MigrationClientException {
 
         log.info(Constant.MIGRATION_LOG + "Migration starting on Authorization code table");
 
-        List<AuthzCodeInfo> authzCodeInfos = getAuthzCoedList();
-        try {
-            List<AuthzCodeInfo> updatedAuthzCodeInfoList = updateAuthzCodeHashColumnValues(authzCodeInfos, hashingAlgo);
-            try (Connection connection = getDataSource().getConnection()) {
-                connection.setAutoCommit(false);
-                // persists modified hash values
-                try {
-                    OAuthDAO.getInstance().updateNewAuthzCodeHash(updatedAuthzCodeInfoList, connection);
-                    connection.commit();
-                } catch (SQLException e1) {
-                    connection.rollback();
-                    String error = "SQL error while updating authorization code hash";
-                    throw new MigrationClientException(error, e1);
-                }
-            } catch (SQLException e) {
-                String error = "SQL error while updating authorization code hash";
-                throw new MigrationClientException(error, e);
+        int offset = 0;
+        log.info("Offset is set to {} and limit is set to {}", offset, chunkSize);
+
+        while (true) {
+            List<AuthzCodeInfo> authzCodeInfos = getAuthzCoedList(offset, chunkSize);
+            if (authzCodeInfos.isEmpty()) {
+                break;
             }
-        } catch (CryptoException e) {
-            throw new MigrationClientException("Error while encrypting authorization codes.", e);
-        } catch (IdentityOAuth2Exception e) {
-            throw new MigrationClientException("Error while migrating authorization codes.", e);
+            try {
+                List<AuthzCodeInfo> updatedAuthzCodeInfoList =
+                        updateAuthzCodeHashColumnValues(authzCodeInfos, hashingAlgo);
+                try (Connection connection = getDataSource().getConnection()) {
+                    connection.setAutoCommit(false);
+                    // Persists modified hash values.
+                    try {
+                        OAuthDAO.getInstance().updateNewAuthzCodeHash(updatedAuthzCodeInfoList, connection);
+                        connection.commit();
+                        log.info("Authorization code migration completed for tokens {} to {} ", offset, chunkSize);
+                        offset += authzCodeInfos.size();
+                    } catch (SQLException e1) {
+                        connection.rollback();
+                        String error = "SQL error while updating authorization code hash";
+                        throw new MigrationClientException(error, e1);
+                    }
+                } catch (SQLException e) {
+                    String error = "SQL error while updating authorization code hash";
+                    throw new MigrationClientException(error, e);
+                }
+            } catch (CryptoException e) {
+                throw new MigrationClientException("Error while encrypting authorization codes.", e);
+            } catch (IdentityOAuth2Exception e) {
+                throw new MigrationClientException("Error while migrating authorization codes.", e);
+            }
         }
     }
 
-    private List<OauthTokenInfo> getTokenList() throws MigrationClientException {
+    private List<OauthTokenInfo> getTokenList(int offset, int limit) throws MigrationClientException {
 
         List<OauthTokenInfo> oauthTokenList;
         try (Connection connection = getDataSource().getConnection()) {
             connection.setAutoCommit(false);
-            oauthTokenList = OAuthDAO.getInstance().getAllAccessTokens(connection);
+            oauthTokenList = OAuthDAO.getInstance().getAllAccessTokens(connection, offset, limit);
         } catch (SQLException e) {
             String error = "SQL error while retrieving token hash";
             throw new MigrationClientException(error, e);
@@ -112,12 +153,12 @@ public class OAuthDataMigrator extends Migrator {
         return oauthTokenList;
     }
 
-    private List<AuthzCodeInfo> getAuthzCoedList() throws MigrationClientException {
+    private List<AuthzCodeInfo> getAuthzCoedList(int offset, int limit) throws MigrationClientException {
 
         List<AuthzCodeInfo> authzCodeInfoList;
         try (Connection connection = getDataSource().getConnection()) {
             connection.setAutoCommit(false);
-            authzCodeInfoList = OAuthDAO.getInstance().getAllAuthzCodes(connection);
+            authzCodeInfoList = OAuthDAO.getInstance().getAllAuthzCodes(connection, offset, limit);
         } catch (SQLException e) {
             String error = "SQL error while retrieving authorization code hash";
             throw new MigrationClientException(error, e);
@@ -161,7 +202,8 @@ public class OAuthDataMigrator extends Migrator {
                         }
 
                         OauthTokenInfo updatedOauthTokenInfo =
-                                getHashedTokenInfoFromEncryptedToken(tokenInfo, newEncryptedAccessToken, newEncryptedRefreshToken,
+                                getHashedTokenInfoFromEncryptedToken(tokenInfo, newEncryptedAccessToken,
+                                        newEncryptedRefreshToken,
                                         decryptedAccessToken,
                                         decryptedRefreshToken);
                         updatedOauthTokenList.add(updatedOauthTokenInfo);
@@ -319,7 +361,8 @@ public class OAuthDataMigrator extends Migrator {
         return updatedAuthzCodeInfo;
     }
 
-    private List<AuthzCodeInfo> updateAuthzCodeHashColumnValues(List<AuthzCodeInfo> authzCodeInfos, String hashAlgorithm)
+    private List<AuthzCodeInfo> updateAuthzCodeHashColumnValues(List<AuthzCodeInfo> authzCodeInfos,
+                                                                String hashAlgorithm)
             throws IdentityOAuth2Exception, CryptoException {
 
         List<AuthzCodeInfo> updatedAuthzCodeList = new ArrayList<>();
@@ -334,21 +377,21 @@ public class OAuthDataMigrator extends Migrator {
                     if (!isBase64DecodeAndIsSelfContainedCipherText(authzCode)) {
                         // Existing codes are not encrypted with OAEP.
                         byte[] decryptedAuthzCode = CryptoUtil.getDefaultCryptoUtil()
-                                                                .base64DecodeAndDecrypt(authzCode, "RSA");
+                                .base64DecodeAndDecrypt(authzCode, "RSA");
                         String newEncryptedAuthzCode = CryptoUtil.getDefaultCryptoUtil().encryptAndBase64Encode
                                 (decryptedAuthzCode);
                         TokenPersistenceProcessor tokenPersistenceProcessor = new HashingPersistenceProcessor();
                         String authzCodeHash = tokenPersistenceProcessor
                                 .getProcessedAuthzCode(new String(decryptedAuthzCode, Charsets.UTF_8));
                         AuthzCodeInfo updatedAuthzCodeInfo = (new AuthzCodeInfo(newEncryptedAuthzCode,
-                                                                                  authzCodeInfo.getCodeId()));
+                                authzCodeInfo.getCodeId()));
                         updatedAuthzCodeInfo.setAuthorizationCodeHash(authzCodeHash);
                         updatedAuthzCodeList.add(updatedAuthzCodeInfo);
                     } else {
                         if (StringUtils.isBlank(authzCodeInfo.getAuthorizationCodeHash())) {
 
                             byte[] decryptedAuthzCode = CryptoUtil.getDefaultCryptoUtil()
-                                                                    .base64DecodeAndDecrypt(authzCode);
+                                    .base64DecodeAndDecrypt(authzCode);
 
                             TokenPersistenceProcessor tokenPersistenceProcessor = new HashingPersistenceProcessor();
                             String authzCodeHash = tokenPersistenceProcessor

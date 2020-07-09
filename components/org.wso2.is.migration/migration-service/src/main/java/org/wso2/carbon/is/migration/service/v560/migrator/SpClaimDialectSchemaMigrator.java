@@ -18,8 +18,8 @@
 
 package org.wso2.carbon.is.migration.service.v560.migrator;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
 import org.wso2.carbon.identity.core.util.IdentityDatabaseUtil;
 import org.wso2.carbon.is.migration.service.SchemaMigrator;
@@ -29,8 +29,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
+/**
+ * SpClaimDialectSchemaMigrator.
+ */
 public class SpClaimDialectSchemaMigrator extends SchemaMigrator {
-    private static final Log log = LogFactory.getLog(SpClaimDialectSchemaMigrator.class);
 
     public static final String IS_SP_CLAIM_DIALECT_TABLE_EXISTS_MYSQL = "SELECT ID FROM SP_CLAIM_DIALECT LIMIT 1";
     public static final String IS_SP_CLAIM_DIALECT_TABLE_EXISTS_DB2SQL = "SELECT ID FROM SP_CLAIM_DIALECT FETCH FIRST" +
@@ -38,6 +40,7 @@ public class SpClaimDialectSchemaMigrator extends SchemaMigrator {
     public static final String IS_SP_CLAIM_DIALECT_TABLE_EXISTS_MSSQL = "SELECT TOP 1 ID FROM SP_CLAIM_DIALECT";
     public static final String IS_SP_CLAIM_DIALECT_TABLE_EXISTS_ORACLE = "SELECT ID FROM SP_CLAIM_DIALECT WHERE " +
             "ROWNUM < 2";
+    private static final Logger log = LoggerFactory.getLogger(SpClaimDialectSchemaMigrator.class);
 
     @Override
     public void migrate() throws MigrationClientException {
@@ -48,6 +51,12 @@ public class SpClaimDialectSchemaMigrator extends SchemaMigrator {
         } else {
             log.info("SP_CLAIM_DIALECT already exist in the database. Hence skipping.");
         }
+    }
+
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
     }
 
     /**
@@ -79,11 +88,13 @@ public class SpClaimDialectSchemaMigrator extends SchemaMigrator {
                     // Executing the query will return no results, if the needed database scheme is not there.
                     try (ResultSet results = preparedStatement.executeQuery()) {
                         if (results.next()) {
+                            connection.rollback();
                             return true;
                         }
                     }
                 } catch (SQLException ignore) {
                     //Ignore. Exception can be thrown when the table does not exist.
+                    connection.rollback();
                 }
             }
         } catch (SQLException e) {

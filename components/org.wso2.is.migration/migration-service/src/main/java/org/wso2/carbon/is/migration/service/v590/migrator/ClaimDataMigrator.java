@@ -20,8 +20,8 @@
 package org.wso2.carbon.is.migration.service.v590.migrator;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.identity.claim.metadata.mgt.dao.CacheBackedExternalClaimDAO;
 import org.wso2.carbon.identity.claim.metadata.mgt.dao.CacheBackedLocalClaimDAO;
 import org.wso2.carbon.identity.claim.metadata.mgt.dao.ClaimDialectDAO;
@@ -46,7 +46,6 @@ import org.wso2.carbon.user.core.UserCoreConstants;
 import org.wso2.carbon.user.core.claim.ClaimMapping;
 import org.wso2.carbon.user.core.claim.inmemory.ClaimConfig;
 
-import javax.xml.stream.XMLStreamException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -55,12 +54,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.xml.stream.XMLStreamException;
+
 /**
  * This class handles the claim data migration.
  */
 public class ClaimDataMigrator extends Migrator {
 
-    private static final Log log = LogFactory.getLog(ClaimDataMigrator.class);
+    private static final Logger log = LoggerFactory.getLogger(ClaimDataMigrator.class);
 
     private static final String CLAIM_CONFIG = "claim-config.xml";
 
@@ -71,6 +72,12 @@ public class ClaimDataMigrator extends Migrator {
     private CacheBackedLocalClaimDAO localClaimDAO = new CacheBackedLocalClaimDAO(new LocalClaimDAO());
 
     private CacheBackedExternalClaimDAO externalClaimDAO = new CacheBackedExternalClaimDAO(new ExternalClaimDAO());
+
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
+    }
 
     @Override
     public void migrate() throws MigrationClientException {
@@ -248,7 +255,8 @@ public class ClaimDataMigrator extends Migrator {
      * @param claimMapping      claim mappings
      * @throws ClaimMetadataException ClaimMetadataException
      */
-    private void addLocalClaimMapping(int tenantId, String primaryDomainName, String claimURI, ClaimMapping claimMapping) throws ClaimMetadataException {
+    private void addLocalClaimMapping(int tenantId, String primaryDomainName, String claimURI,
+                                      ClaimMapping claimMapping) throws ClaimMetadataException {
 
         List<AttributeMapping> mappedAttributes = new ArrayList<>();
         if (StringUtils.isNotBlank(claimMapping.getMappedAttribute())) {

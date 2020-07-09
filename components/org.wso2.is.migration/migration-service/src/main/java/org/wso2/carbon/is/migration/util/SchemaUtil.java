@@ -37,7 +37,7 @@ public class SchemaUtil {
      *
      * @param connection SQL connection.
      * @param columnName Column name to check.
-     * @param tableName Table name to check the existence of the column.
+     * @param tableName  Table name to check the existence of the column.
      * @return true if the column exist. False otherwise.
      */
     public static boolean isColumnExist(Connection connection, String columnName, String tableName) {
@@ -52,15 +52,15 @@ public class SchemaUtil {
                 connection.setAutoCommit(false);
                 String sql;
                 if (connection.getMetaData().getDriverName().contains("MySQL")
-                    || connection.getMetaData().getDriverName().contains("H2")
-                    || connection.getMetaData().getDriverName().contains("PostgreSQL")) {
+                        || connection.getMetaData().getDriverName().contains("H2")
+                        || connection.getMetaData().getDriverName().contains("PostgreSQL")) {
 
                     sql = String.format(isTokenIdColumnExistsMySql, columnName, tableName);
                 } else if (connection.getMetaData().getDatabaseProductName().contains("DB2")) {
 
                     sql = String.format(isTokenIdColumnExistsDb2, columnName, tableName);
                 } else if (connection.getMetaData().getDriverName().contains("MS SQL") ||
-                           connection.getMetaData().getDriverName().contains("Microsoft")) {
+                        connection.getMetaData().getDriverName().contains("Microsoft")) {
 
                     sql = String.format(isTokenIdColumnExistsMsSql, columnName, tableName);
                 } else {
@@ -70,13 +70,13 @@ public class SchemaUtil {
                     // Executing the query will return no results, if the needed database scheme is not there.
                     try (ResultSet results = preparedStatement.executeQuery()) {
                         if (results.next()) {
+                            connection.commit();
                             return true;
                         }
                     }
                 } catch (SQLException ignore) {
                     //Ignore. Exception can be thrown when the table does not exist.
-                } finally {
-                    connection.commit();
+                    connection.rollback();
                 }
             } catch (SQLException e) {
                 try {
@@ -85,7 +85,7 @@ public class SchemaUtil {
                     log.error("An error occurred while rolling back transactions. ", e1);
                 }
                 log.error("Error while retrieving table metadata for table: " + tableName + " for checking existence " +
-                          "of the column:" + columnName, e);
+                        "of the column:" + columnName, e);
             }
         }
         return false;

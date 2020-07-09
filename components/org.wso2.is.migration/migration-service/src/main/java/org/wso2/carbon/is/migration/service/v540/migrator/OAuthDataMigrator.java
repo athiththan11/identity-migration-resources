@@ -1,24 +1,24 @@
 /*
-* Copyright (c) 2017, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-* http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * Copyright (c) 2017, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package org.wso2.carbon.is.migration.service.v540.migrator;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.is.migration.service.Migrator;
@@ -42,7 +42,13 @@ import java.util.Set;
  */
 public class OAuthDataMigrator extends Migrator {
 
-    private static final Log log = LogFactory.getLog(OAuthDataMigrator.class);
+    private static final Logger log = LoggerFactory.getLogger(OAuthDataMigrator.class);
+
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
+    }
 
     @Override
     public void migrate() throws MigrationClientException {
@@ -74,7 +80,7 @@ public class OAuthDataMigrator extends Migrator {
      * Migrate OAuth consumer apps.
      *
      * @throws MigrationClientException MigrationClientException
-     * @throws SQLException SQLException
+     * @throws SQLException             SQLException
      */
     private void migrateOAuthConsumerAppData() throws MigrationClientException, SQLException {
 
@@ -133,15 +139,15 @@ public class OAuthDataMigrator extends Migrator {
             } else {
                 consumerApp.setApplicationAccessTokenExpiryTime(applicationAccessTokenExpiryTime);
             }
+
             if (expiryTimeConfiguration.getUserAccessTokenExpiryTime() != null) {
-                consumerApp.setUserAccessTokenExpiryTime(expiryTimeConfiguration.getUserAccessTokenExpiryTime() 
-                        / 1000);
+                consumerApp.setUserAccessTokenExpiryTime(expiryTimeConfiguration.getUserAccessTokenExpiryTime() / 1000);
             } else {
                 consumerApp.setUserAccessTokenExpiryTime(userAccessTokenExpiryTime);
             }
+
             if (expiryTimeConfiguration.getRefreshTokenExpiryTime() != null) {
-                consumerApp.setRefreshTokenExpiryTime(expiryTimeConfiguration.getRefreshTokenExpiryTime()
-                        / 1000);
+                consumerApp.setRefreshTokenExpiryTime(expiryTimeConfiguration.getRefreshTokenExpiryTime() / 1000);
             } else {
                 consumerApp.setRefreshTokenExpiryTime(refreshTokenExpiryTime);
             }
@@ -163,7 +169,7 @@ public class OAuthDataMigrator extends Migrator {
      * Migrate OAuth2 scope data.
      *
      * @throws MigrationClientException MigrationClientException
-     * @throws SQLException SQLException
+     * @throws SQLException             SQLException
      */
     private void migrateOAuth2ScopeData() throws MigrationClientException, SQLException {
 

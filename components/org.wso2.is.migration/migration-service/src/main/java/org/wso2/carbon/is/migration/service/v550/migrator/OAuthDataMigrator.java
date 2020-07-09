@@ -17,8 +17,8 @@ package org.wso2.carbon.is.migration.service.v550.migrator;
 
 import org.apache.commons.io.Charsets;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.core.util.CryptoException;
 import org.wso2.carbon.core.util.CryptoUtil;
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
@@ -39,26 +39,46 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
+/**
+ * OAuthDataMigrator.
+ */
 public class OAuthDataMigrator extends Migrator {
 
-    private static final Log log = LogFactory
-            .getLog(org.wso2.carbon.is.migration.service.v550.migrator.OAuthDataMigrator.class);
+    private static final Logger log = LoggerFactory.getLogger(OAuthDataMigrator.class);
     boolean isTokenHashColumnsAvailable = false;
     boolean isAuthzCodeHashColumnAvailable = false;
     boolean isClientSecretHashColumnsAvailable = false;
 
+    private static final String LIMIT = "batchSize";
+    private static final int DEFAULT_CHUNK_SIZE = 10000;
+
     @Override
     public void migrate() throws MigrationClientException {
+
+        // Get the batch size from the configuration if it is provided. Or else use the default size of 10000.
+        Properties migrationProperties = getMigratorConfig().getParameters();
+        int chunkSize = DEFAULT_CHUNK_SIZE;
+        if (migrationProperties.containsKey(LIMIT)) {
+            chunkSize = (int) migrationProperties.get(LIMIT);
+        }
+
         try {
             addHashColumns();
             deleteClientSecretHashColumn();
-            migrateTokens();
-            migrateAuthorizationCodes();
+            migrateTokens(chunkSize);
+            migrateAuthorizationCodes(chunkSize);
             migrateClientSecrets();
         } catch (SQLException e) {
             throw new MigrationClientException("Error while adding hash columns", e);
         }
+    }
+
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
     }
 
     public void addHashColumns() throws MigrationClientException, SQLException {
@@ -67,6 +87,7 @@ public class OAuthDataMigrator extends Migrator {
             connection.setAutoCommit(false);
             isTokenHashColumnsAvailable = TokenDAO.getInstance().isTokenHashColumnsAvailable(connection);
             isAuthzCodeHashColumnAvailable = AuthzCodeDAO.getInstance().isAuthzCodeHashColumnAvailable(connection);
+            connection.rollback();
         }
         if (!isTokenHashColumnsAvailable) {
             try (Connection connection = getDataSource().getConnection()) {
@@ -100,6 +121,7 @@ public class OAuthDataMigrator extends Migrator {
         try (Connection connection = getDataSource().getConnection()) {
             connection.setAutoCommit(false);
             isClientSecretHashColumnsAvailable = OAuthDAO.getInstance().isConsumerSecretHashColumnAvailable(connection);
+            connection.rollback();
         }
         if (isClientSecretHashColumnsAvailable) {
             try (Connection connection = getDataSource().getConnection()) {
@@ -121,27 +143,38 @@ public class OAuthDataMigrator extends Migrator {
      * @throws MigrationClientException
      * @throws SQLException
      */
-    public void migrateTokens() throws MigrationClientException, SQLException {
+    public void migrateTokens(int chunkSize) throws MigrationClientException, SQLException {
 
-        log.info(Constant.MIGRATION_LOG + "Migration starting on OAuth2 access token table.");
-        List<OauthTokenInfo> oauthTokenList;
-        try (Connection connection = getDataSource().getConnection()) {
-            connection.setAutoCommit(false);
-            oauthTokenList = TokenDAO.getInstance().getAllAccessTokensWithHash(connection);
-        }
-        try {
-            //migrating RSA encrypted tokens to OAEP encryption
-            if (OAuth2Util.isEncryptionWithTransformationEnabled()) {
-                migrateOldEncryptedTokens(oauthTokenList);
-            }
-            //migrating plaintext tokens with hashed tokens.
-            if (!OAuth2Util.isTokenEncryptionEnabled()) {
-                migratePlainTextTokens(oauthTokenList);
-            }
-        } catch (IdentityOAuth2Exception e) {
-            throw new MigrationClientException(e.getMessage(), e);
-        }
+        int offset = 0;
+        log.info("{} Migration starting on OAuth2 access token table with offset {} and limit {}.",
+                Constant.MIGRATION_LOG, offset, chunkSize);
 
+        while (true) {
+            List<OauthTokenInfo> oauthTokenList;
+            try (Connection connection = getDataSource().getConnection()) {
+                connection.setAutoCommit(false);
+                oauthTokenList = TokenDAO.getInstance().getAllAccessTokensWithHash(connection, offset, chunkSize);
+            }
+
+            if (oauthTokenList.isEmpty()) {
+                break;
+            }
+
+            try {
+                // Migrating RSA encrypted tokens to OAEP encryption
+                if (OAuth2Util.isEncryptionWithTransformationEnabled()) {
+                    migrateOldEncryptedTokens(oauthTokenList);
+                }
+                // Migrating plaintext tokens with hashed tokens.
+                if (!OAuth2Util.isTokenEncryptionEnabled()) {
+                    migratePlainTextTokens(oauthTokenList);
+                }
+                offset += oauthTokenList.size();
+                log.info("Access token migration completed for offset {} and limit {}.", offset, chunkSize);
+            } catch (IdentityOAuth2Exception e) {
+                throw new MigrationClientException(e.getMessage(), e);
+            }
+        }
     }
 
     public void migrateOldEncryptedTokens(List<OauthTokenInfo> oauthTokenList)
@@ -181,7 +214,6 @@ public class OAuthDataMigrator extends Migrator {
         }
     }
 
-
     private List<OauthTokenInfo> transformFromOldToNewEncryption(List<OauthTokenInfo> oauthTokenList)
             throws MigrationClientException {
 
@@ -196,7 +228,8 @@ public class OAuthDataMigrator extends Migrator {
                 try {
                     boolean accessTokenSelfContained = isBase64DecodeAndIsSelfContainedCipherText(accessToken);
                     if (!accessTokenSelfContained) {
-                        byte[] decryptedAccessToken = CryptoUtil.getDefaultCryptoUtil().base64DecodeAndDecrypt(accessToken,
+                        byte[] decryptedAccessToken = CryptoUtil.getDefaultCryptoUtil()
+                                .base64DecodeAndDecrypt(accessToken,
                                 "RSA");
                         String newEncryptedAccessToken =
                                 CryptoUtil.getDefaultCryptoUtil().encryptAndBase64Encode(decryptedAccessToken);
@@ -234,13 +267,15 @@ public class OAuthDataMigrator extends Migrator {
                 try {
                     boolean refreshTokenSelfContained = isBase64DecodeAndIsSelfContainedCipherText(refreshToken);
                     if (!refreshTokenSelfContained) {
-                        byte[] decryptedRefreshToken = CryptoUtil.getDefaultCryptoUtil().base64DecodeAndDecrypt(refreshToken,
+                        byte[] decryptedRefreshToken = CryptoUtil.getDefaultCryptoUtil()
+                                .base64DecodeAndDecrypt(refreshToken,
                                 "RSA");
                         String newEncryptedRefreshToken =
                                 CryptoUtil.getDefaultCryptoUtil().encryptAndBase64Encode(decryptedRefreshToken);
                         String refreshTokenHash =
-                                hashingPersistenceProcessor.getProcessedAccessTokenIdentifier(new String(decryptedRefreshToken
-                                        , Charsets.UTF_8));
+                                hashingPersistenceProcessor
+                                        .getProcessedAccessTokenIdentifier(new String(decryptedRefreshToken,
+                                                Charsets.UTF_8));
                         if (updatedTokenInfo == null) {
                             updatedTokenInfo = new OauthTokenInfo(oauthTokenInfo);
                         }
@@ -315,28 +350,38 @@ public class OAuthDataMigrator extends Migrator {
      * @throws MigrationClientException
      * @throws SQLException
      */
-    public void migrateAuthorizationCodes() throws MigrationClientException, SQLException {
+    public void migrateAuthorizationCodes(int chunkSize) throws MigrationClientException, SQLException {
 
-        log.info(Constant.MIGRATION_LOG + "Migration starting on OAuth2 authorization code table.");
-        List<AuthzCodeInfo> authzCodeInfoList;
-        try (Connection connection = getDataSource().getConnection()) {
-            connection.setAutoCommit(false);
-            authzCodeInfoList = AuthzCodeDAO.getInstance().getAllAuthzCodesWithHashes(connection);
-        }
-        try {
-            //migrating RSA encrypted authz codes to OAEP encryption
-            if (OAuth2Util.isEncryptionWithTransformationEnabled()) {
-                migrateOldEncryptedAuthzCodes(authzCodeInfoList);
+        int offset = 0;
+        log.info("{} Migration starting on OAuth2 authorization code table with offset {} and limit {}.",
+                Constant.MIGRATION_LOG, offset, chunkSize);
+
+        while (true) {
+            List<AuthzCodeInfo> authzCodeInfoList;
+            try (Connection connection = getDataSource().getConnection()) {
+                connection.setAutoCommit(false);
+                authzCodeInfoList = AuthzCodeDAO.getInstance().getAllAuthzCodesWithHashes(connection, offset, chunkSize);
             }
-            //migrating plaintext authz codes with hashed authz codes.
-            if (!OAuth2Util.isTokenEncryptionEnabled()) {
-                migratePlainTextAuthzCodes(authzCodeInfoList);
+            if (authzCodeInfoList.isEmpty()) {
+                break;
             }
-        } catch (IdentityOAuth2Exception e) {
-            throw new MigrationClientException(
-                    "Error while checking configurations for encryption with " + "transformation is enabled. ", e);
-        } catch (SQLException e) {
-            throw new MigrationClientException("Error while getting datasource connection. ", e);
+            try {
+                // Migrating RSA encrypted authz codes to OAEP encryption.
+                if (OAuth2Util.isEncryptionWithTransformationEnabled()) {
+                    migrateOldEncryptedAuthzCodes(authzCodeInfoList);
+                }
+                // Migrating plaintext authz codes with hashed authz codes.
+                if (!OAuth2Util.isTokenEncryptionEnabled()) {
+                    migratePlainTextAuthzCodes(authzCodeInfoList);
+                }
+                offset += authzCodeInfoList.size();
+                log.info("Authorization code migration completed with offset {} and limit {}", offset, chunkSize);
+            } catch (IdentityOAuth2Exception e) {
+                throw new MigrationClientException(
+                        "Error while checking configurations for encryption with " + "transformation is enabled. ", e);
+            } catch (SQLException e) {
+                throw new MigrationClientException("Error while getting datasource connection. ", e);
+            }
         }
     }
 
@@ -367,7 +412,8 @@ public class OAuthDataMigrator extends Migrator {
     }
 
     /**
-     * This method will generate hash values of authorization codes and update the authorization code table with those values
+     * This method will generate hash values of authorization codes and update the authorization
+     * code table with those values.
      *
      * @param authzCodeInfoList
      * @throws MigrationClientException
@@ -445,7 +491,7 @@ public class OAuthDataMigrator extends Migrator {
     }
 
     /**
-     * Method to migrate old encrypted client secrets to new encrypted client secrets
+     * Method to migrate old encrypted client secrets to new encrypted client secrets.
      *
      * @throws MigrationClientException
      */

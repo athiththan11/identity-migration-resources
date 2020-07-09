@@ -16,6 +16,7 @@
 
 package org.wso2.is.data.sync.system.pipeline.persist;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.is.data.sync.system.database.ColumnData;
@@ -47,6 +48,7 @@ import static org.wso2.is.data.sync.system.util.CommonUtil.getPrimaryKeys;
 import static org.wso2.is.data.sync.system.util.Constant.ENTRY_FILED_ACTION_DELETE;
 import static org.wso2.is.data.sync.system.util.Constant.ENTRY_FILED_ACTION_INSERT;
 import static org.wso2.is.data.sync.system.util.Constant.ENTRY_FILED_ACTION_UPDATE;
+import static org.wso2.is.data.sync.system.util.Constant.FOREIGN_KEY_VIOLATION_ERROR_CODE_POSTGRESQL;
 
 /**
  * The persistence stage of the data sync pipeline.
@@ -85,7 +87,7 @@ public class Persistor {
 
                     try (PreparedStatement ps = targetConnection.prepareStatement(sql)) {
 
-                        Map<String, EntryField> rowEntry = entry.getRowEntry();
+                        Map<String, EntryField<?>> rowEntry = entry.getRowEntry();
                         setPSForSelectTarget(tableMetaData, rowEntry, ps);
                         try (ResultSet rs = ps.executeQuery()) {
 
@@ -94,10 +96,11 @@ public class Persistor {
                                     if (ENTRY_FILED_ACTION_DELETE.equals(entry.getOperation())) {
                                         setPSForDeleteTarget(tableMetaData, rowEntry, psDelete);
                                         if (log.isDebugEnabled()) {
-                                            log.debug("Deleting entry: " + psUpdate);
+                                            log.debug("Deleting entry: " + psDelete);
                                         }
+                                        psDelete.executeUpdate();
                                     } else if (ENTRY_FILED_ACTION_INSERT.equals(entry.getOperation()) ||
-                                               ENTRY_FILED_ACTION_UPDATE.equals(entry.getOperation())) {
+                                            ENTRY_FILED_ACTION_UPDATE.equals(entry.getOperation())) {
 
                                         setPSForUpdateTarget(tableMetaData, rowEntry, psUpdate);
                                         if (log.isDebugEnabled()) {
@@ -110,7 +113,7 @@ public class Persistor {
 
                                         // Ignore delete operation on none extant target entry.
                                     } else if (ENTRY_FILED_ACTION_INSERT.equals(entry.getOperation()) ||
-                                               ENTRY_FILED_ACTION_UPDATE.equals(entry.getOperation())) {
+                                            ENTRY_FILED_ACTION_UPDATE.equals(entry.getOperation())) {
 
                                         setPSForInsertTarget(tableMetaData, rowEntry, psInsert);
                                         if (log.isDebugEnabled()) {
@@ -122,8 +125,16 @@ public class Persistor {
                                 TransactionResult result = new TransactionResult(entry, true);
                                 transactionResults.add(result);
                             } catch (SQLException e) {
-                                if (e instanceof SQLIntegrityConstraintViolationException) {
-                                    //ignore. this will be recovered.
+                                if (e instanceof SQLIntegrityConstraintViolationException ||
+                                        /*
+                                        In Postgres, the thrown 'PGSQLException' does not extend from
+                                        'SQLIntegrityConstraintViolationException'.
+                                        Hence, we need to handle it with the 'SQL State' for the current operation,
+                                        which is '23503', indicating that there was a foreign key constraint violation.
+                                         */
+                                        (StringUtils.isNotEmpty(e.getSQLState()) &&
+                                                e.getSQLState().equals(FOREIGN_KEY_VIOLATION_ERROR_CODE_POSTGRESQL))) {
+                                    // Ignore. this will be recovered.
                                     if (log.isDebugEnabled()) {
                                         log.debug("SQL constraint violation occurred while data sync. ", e);
                                     }
@@ -178,22 +189,22 @@ public class Persistor {
         return sql;
     }
 
-    protected void setPSForSelectTarget(TableMetaData metaData, Map<String, EntryField> fields, PreparedStatement ps)
+    protected void setPSForSelectTarget(TableMetaData metaData, Map<String, EntryField<?>> fields, PreparedStatement ps)
             throws SQLException {
 
         List<String> primaryKeys = metaData.getPrimaryKeys();
         for (int i = 0; i < primaryKeys.size(); i++) {
-            EntryField entryField = fields.get(primaryKeys.get(i));
+            EntryField<?> entryField = fields.get(primaryKeys.get(i));
             ps.setObject(i + 1, entryField.getValue());
         }
     }
 
-    protected void setPSForInsertTarget(TableMetaData metaData, Map<String, EntryField> fields, PreparedStatement
+    protected void setPSForInsertTarget(TableMetaData metaData, Map<String, EntryField<?>> fields, PreparedStatement
             psTargetInsert) throws SQLException, SyncClientException {
 
         List<ColumnData> columnDataList = metaData.getColumnDataList();
         for (int i = 0; i < columnDataList.size(); i++) {
-            EntryField entryField = fields.get(columnDataList.get(i).getName());
+            EntryField<?> entryField = fields.get(columnDataList.get(i).getName());
             Object value = null;
             if (entryField != null) {
                 value = entryField.getValue();
@@ -202,29 +213,29 @@ public class Persistor {
         }
     }
 
-    protected void setPSForUpdateTarget(TableMetaData metaData, Map<String, EntryField> fields, PreparedStatement
+    protected void setPSForUpdateTarget(TableMetaData metaData, Map<String, EntryField<?>> fields, PreparedStatement
             psTargetUpdate) throws SQLException, SyncClientException {
 
         List<String> primaryKeys = metaData.getPrimaryKeys();
         List<String> nonPrimaryKeys = metaData.getNonPrimaryKeys();
 
         for (int i = 0; i < nonPrimaryKeys.size(); i++) {
-            EntryField entryField = fields.get(nonPrimaryKeys.get(i));
+            EntryField<?> entryField = fields.get(nonPrimaryKeys.get(i));
             convertEntryFieldToStatement(psTargetUpdate, entryField, i + 1);
         }
         for (int i = 0; i < primaryKeys.size(); i++) {
-            EntryField entryField = fields.get(primaryKeys.get(i));
+            EntryField<?> entryField = fields.get(primaryKeys.get(i));
             convertEntryFieldToStatement(psTargetUpdate, entryField, (nonPrimaryKeys.size() + 1 + i));
         }
     }
 
-    protected void setPSForDeleteTarget(TableMetaData metaData, Map<String, EntryField> fields, PreparedStatement
+    protected void setPSForDeleteTarget(TableMetaData metaData, Map<String, EntryField<?>> fields, PreparedStatement
             psTargetUpdate) throws SQLException, SyncClientException {
 
         List<String> primaryKeys = metaData.getPrimaryKeys();
 
         for (int i = 0; i < primaryKeys.size(); i++) {
-            EntryField entryField = fields.get(primaryKeys.get(i));
+            EntryField<?> entryField = fields.get(primaryKeys.get(i));
             convertEntryFieldToStatement(psTargetUpdate, entryField, i + 1);
         }
     }

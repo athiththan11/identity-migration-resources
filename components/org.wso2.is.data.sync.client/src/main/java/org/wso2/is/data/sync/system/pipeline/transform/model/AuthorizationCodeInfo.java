@@ -16,11 +16,22 @@
 
 package org.wso2.is.data.sync.system.pipeline.transform.model;
 
+/**
+ * AuthorizationCodeInfo.
+ */
 public class AuthorizationCodeInfo {
 
     private String authorizationCode;
     private String decryptedAuthorizationCode;
     private String authorizationCodeHash;
+    private int idpId;
+
+    public AuthorizationCodeInfo(String authorizationCode, String authorizationCodeHash, int idpId) {
+
+        this.authorizationCode = authorizationCode;
+        this.authorizationCodeHash = authorizationCodeHash;
+        this.idpId = idpId;
+    }
 
     public AuthorizationCodeInfo(String authorizationCode) {
 
@@ -61,5 +72,15 @@ public class AuthorizationCodeInfo {
     public void setAuthorizationCodeHash(String authorizationCodeHash) {
 
         this.authorizationCodeHash = authorizationCodeHash;
+    }
+
+    public int getIdpId() {
+
+        return idpId;
+    }
+
+    public void setIdpId(int idpId) {
+
+        this.idpId = idpId;
     }
 }

@@ -17,8 +17,8 @@
 package org.wso2.carbon.is.migration.service.v540.migrator;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
 import org.wso2.carbon.is.migration.service.Migrator;
 import org.wso2.carbon.is.migration.service.v540.SQLConstants;
@@ -37,9 +37,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * PermissionMigrator.
+ */
 public class PermissionMigrator extends Migrator {
 
-    private static final Log log = LogFactory.getLog(PermissionMigrator.class);
+    private static final Logger log = LoggerFactory.getLogger(PermissionMigrator.class);
+
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
+    }
 
     @Override
     public void migrate() throws MigrationClientException {
@@ -54,12 +63,14 @@ public class PermissionMigrator extends Migrator {
                     return;
                 }
 
-                log.info(Constant.MIGRATION_LOG + " Found " + duplicatedPermissions.size() + " duplicated permissions.");
+                log.info(Constant.MIGRATION_LOG + " Found " + duplicatedPermissions.size()
+                        + " duplicated permissions.");
 
                 List<RolePermission> duplicatedRolePermissions = getDuplicatedRolePermissions(connection,
                         duplicatedPermissions);
                 if (!duplicatedRolePermissions.isEmpty()) {
-                    log.info(Constant.MIGRATION_LOG + " Found " + duplicatedPermissions.size() + " duplicated role " + "permissions.");
+                    log.info(Constant.MIGRATION_LOG + " Found " + duplicatedPermissions.size() + " duplicated role "
+                            + "permissions.");
                     deleteDuplicatedRolePermissions(connection, duplicatedRolePermissions);
                     log.info(Constant.MIGRATION_LOG + " Removed duplicated role permissions.");
                 }
@@ -107,7 +118,8 @@ public class PermissionMigrator extends Migrator {
     }
 
     public List<RolePermission> getDuplicatedRolePermissions(Connection connection,
-            List<Permission> duplicatedPermissions) throws MigrationClientException, SQLException {
+                                                             List<Permission> duplicatedPermissions)
+            throws MigrationClientException, SQLException {
 
         List<RolePermission> allRolePermissions = getAllRolePermissions(connection);
         List<RolePermission> uniqueRolePermissions = new ArrayList<>();
@@ -137,7 +149,8 @@ public class PermissionMigrator extends Migrator {
     }
 
     private List<UserPermission> getDuplicatedUserPermissions(Connection connection,
-            List<Permission> duplicatedPermissions) throws MigrationClientException, SQLException {
+                                                              List<Permission> duplicatedPermissions)
+            throws MigrationClientException, SQLException {
 
         List<UserPermission> allUserPermissions = getAllUserPermissions(connection);
         List<UserPermission> uniqueUserPermissions = new ArrayList<>();
@@ -171,7 +184,7 @@ public class PermissionMigrator extends Migrator {
         List<Permission> allPermissions = new ArrayList<>();
 
         try (PreparedStatement statement = connection.prepareStatement(getPermissionSelectQuery());
-                ResultSet resultSet = statement.executeQuery()) {
+             ResultSet resultSet = statement.executeQuery()) {
             while (resultSet.next()) {
                 Permission permission = new Permission(resultSet.getInt("UM_ID"), resultSet.getString("UM_RESOURCE_ID"),
                         resultSet.getString("UM_ACTION"), resultSet.getInt("UM_TENANT_ID"));
@@ -191,7 +204,7 @@ public class PermissionMigrator extends Migrator {
         List<RolePermission> allRolePermissions = new ArrayList<>();
 
         try (PreparedStatement statement = connection.prepareStatement(getRolePermissionSelectQuery());
-                ResultSet resultSet = statement.executeQuery()) {
+             ResultSet resultSet = statement.executeQuery()) {
             while (resultSet.next()) {
                 RolePermission rolePermission = new RolePermission(resultSet.getInt("UM_ID"),
                         resultSet.getInt("UM_PERMISSION_ID"), resultSet.getString("UM_ROLE_NAME"),
@@ -212,7 +225,7 @@ public class PermissionMigrator extends Migrator {
         List<UserPermission> allUserPermissions = new ArrayList<>();
 
         try (PreparedStatement statement = connection.prepareStatement(getUserPermissionSelectQuery());
-                ResultSet resultSet = statement.executeQuery()) {
+             ResultSet resultSet = statement.executeQuery()) {
             while (resultSet.next()) {
                 UserPermission userPermission = new UserPermission(resultSet.getInt("UM_ID"),
                         resultSet.getInt("UM_PERMISSION_ID"), resultSet.getString("UM_USER_NAME"),

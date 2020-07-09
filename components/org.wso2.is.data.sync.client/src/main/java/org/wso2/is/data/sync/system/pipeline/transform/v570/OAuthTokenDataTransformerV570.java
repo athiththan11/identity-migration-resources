@@ -33,6 +33,7 @@ import org.wso2.is.data.sync.system.util.OAuth2Util;
 import java.util.List;
 
 import static org.wso2.is.data.sync.system.util.CommonUtil.getObjectValueFromEntry;
+import static org.wso2.is.data.sync.system.util.CommonUtil.isIdentifierNamesMaintainedInLowerCase;
 import static org.wso2.is.data.sync.system.util.Constant.COLUMN_ACCESS_TOKEN;
 import static org.wso2.is.data.sync.system.util.Constant.COLUMN_ACCESS_TOKEN_HASH;
 import static org.wso2.is.data.sync.system.util.Constant.COLUMN_REFRESH_TOKEN;
@@ -43,6 +44,9 @@ import static org.wso2.is.data.sync.system.util.OAuth2Util.hashTokens;
 import static org.wso2.is.data.sync.system.util.OAuth2Util.transformEncryptedTokens;
 import static org.wso2.is.data.sync.system.util.OAuth2Util.updateJournalEntryForToken;
 
+/**
+ * OAuthTokenDataTransformerV570.
+ */
 @VersionAdvice(version = "5.7.0", tableName = "IDN_OAUTH2_ACCESS_TOKEN")
 public class OAuthTokenDataTransformerV570 implements DataTransformer {
 
@@ -55,13 +59,18 @@ public class OAuthTokenDataTransformerV570 implements DataTransformer {
         try {
             boolean encryptionWithTransformationEnabled = OAuth2Util.isEncryptionWithTransformationEnabled();
             boolean tokenEncryptionEnabled = OAuth2Util.isTokenEncryptionEnabled();
+            boolean isColumnNameInsLowerCase = isIdentifierNamesMaintainedInLowerCase(context.getTargetConnection());
 
             for (JournalEntry entry : journalEntryList) {
 
-                String accessToken = (String) getObjectValueFromEntry(entry, COLUMN_ACCESS_TOKEN);
-                String refreshToken = (String) getObjectValueFromEntry(entry, COLUMN_REFRESH_TOKEN);
-                String accessTokenHash = (String) getObjectValueFromEntry(entry, COLUMN_ACCESS_TOKEN_HASH);
-                String refreshTokenHash = (String) getObjectValueFromEntry(entry, COLUMN_REFRESH_TOKEN_HASH);
+                String accessToken = getObjectValueFromEntry(entry, COLUMN_ACCESS_TOKEN,
+                        isColumnNameInsLowerCase);
+                String refreshToken = getObjectValueFromEntry(entry, COLUMN_REFRESH_TOKEN,
+                        isColumnNameInsLowerCase);
+                String accessTokenHash = getObjectValueFromEntry(entry, COLUMN_ACCESS_TOKEN_HASH,
+                        isColumnNameInsLowerCase);
+                String refreshTokenHash = getObjectValueFromEntry(entry, COLUMN_REFRESH_TOKEN_HASH,
+                        isColumnNameInsLowerCase);
 
                 TokenInfo tokenInfo = new TokenInfo(accessToken, refreshToken, accessTokenHash, refreshTokenHash);
                 if (encryptionWithTransformationEnabled) {
@@ -72,17 +81,17 @@ public class OAuthTokenDataTransformerV570 implements DataTransformer {
                         } else {
                             reHashWithHashingAlgorithm(tokenInfo, hashingAlgorithm);
                         }
-                        updateJournalEntryForToken(entry, tokenInfo);
+                        updateJournalEntryForToken(entry, tokenInfo, isColumnNameInsLowerCase);
                     } catch (CryptoException e) {
                         throw new SyncClientException("Error while transforming encrypted tokens", e);
                     }
                 } else if (!tokenEncryptionEnabled) {
                     if (StringUtils.isBlank(accessTokenHash)) {
                         hashTokens(tokenInfo);
-                        updateJournalEntryForToken(entry, tokenInfo);
                     } else {
                         reHashWithHashingAlgorithm(tokenInfo, hashingAlgorithm);
                     }
+                    updateJournalEntryForToken(entry, tokenInfo, isColumnNameInsLowerCase);
                 }
             }
         } catch (IdentityOAuth2Exception e) {

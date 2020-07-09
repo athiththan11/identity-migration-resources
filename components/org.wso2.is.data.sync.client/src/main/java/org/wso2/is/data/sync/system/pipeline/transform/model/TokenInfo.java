@@ -16,6 +16,9 @@
 
 package org.wso2.is.data.sync.system.pipeline.transform.model;
 
+/**
+ * TokenInfo.
+ */
 public class TokenInfo {
 
     private String accessToken;
@@ -24,6 +27,17 @@ public class TokenInfo {
     private String decryptedRefreshToken;
     private String accessTokenHash;
     private String refreshTokenHash;
+    private int idpId;
+
+    public TokenInfo(String accessToken, String refreshToken, String accessTokenHash, String refreshTokenHash,
+                     int idpId) {
+
+        this.accessToken = accessToken;
+        this.refreshToken = refreshToken;
+        this.accessTokenHash = accessTokenHash;
+        this.refreshTokenHash = refreshTokenHash;
+        this.idpId = idpId;
+    }
 
     public TokenInfo(String accessToken, String refreshToken) {
 
@@ -97,5 +111,15 @@ public class TokenInfo {
     public void setDecryptedRefreshToken(String decryptedRefreshToken) {
 
         this.decryptedRefreshToken = decryptedRefreshToken;
+    }
+
+    public int getIdpId() {
+
+        return idpId;
+    }
+
+    public void setIdpId(int idpId) {
+
+        this.idpId = idpId;
     }
 }

@@ -20,8 +20,8 @@ package org.wso2.carbon.is.migration.service.v530.migrator;
 import org.apache.axiom.om.OMElement;
 import org.apache.axiom.om.impl.builder.StAXOMBuilder;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.core.util.CryptoException;
 import org.wso2.carbon.identity.base.IdentityException;
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
@@ -40,20 +40,31 @@ import java.io.OutputStream;
 import java.nio.file.Paths;
 import java.util.Iterator;
 import java.util.Set;
+
 import javax.xml.namespace.QName;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+/**
+ * UserStorePasswordMigrator.
+ */
 public class UserStorePasswordMigrator extends Migrator {
 
-    private static final Log log = LogFactory.getLog(UserStorePasswordMigrator.class);
+    private static final Logger log = LoggerFactory.getLogger(UserStorePasswordMigrator.class);
 
     @Override
     public void migrate() throws MigrationClientException {
+
         log.info(Constant.MIGRATION_LOG + "Migration starting on Secondary User Stores");
         updateSuperTenantConfigs();
         updateTenantConfigs();
+    }
+
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
     }
 
     private void updateTenantConfigs() throws MigrationClientException {
@@ -90,6 +101,7 @@ public class UserStorePasswordMigrator extends Migrator {
     }
 
     private void updateSuperTenantConfigs() {
+
         try {
             File[] userstoreConfigs = getUserStoreConfigFiles(Constant.SUPER_TENANT_ID);
             for (File file : userstoreConfigs) {
@@ -107,11 +119,11 @@ public class UserStorePasswordMigrator extends Migrator {
         String carbonHome = System.getProperty(Constant.CARBON_HOME);
         String userStorePath;
         if (tenantId == Constant.SUPER_TENANT_ID) {
-            userStorePath = Paths.get(carbonHome, new String[] { "repository", "deployment", "server", "userstores" })
+            userStorePath = Paths.get(carbonHome, new String[]{"repository", "deployment", "server", "userstores"})
                     .toString();
         } else {
             userStorePath = Paths
-                    .get(carbonHome, new String[] { "repository", "tenants", String.valueOf(tenantId), "userstores" })
+                    .get(carbonHome, new String[]{"repository", "tenants", String.valueOf(tenantId), "userstores"})
                     .toString();
         }
         File[] files = new File(userStorePath).listFiles();

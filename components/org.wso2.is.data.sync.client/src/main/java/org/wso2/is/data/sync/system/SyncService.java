@@ -30,16 +30,18 @@ import org.wso2.is.data.sync.system.pipeline.transform.v550.AuthorizationCodeDat
 import org.wso2.is.data.sync.system.pipeline.transform.v550.OAuthTokenDataTransformerV550;
 import org.wso2.is.data.sync.system.pipeline.transform.v570.AuthorizationCodeDataTransformerV570;
 import org.wso2.is.data.sync.system.pipeline.transform.v570.OAuthTokenDataTransformerV570;
+import org.wso2.is.data.sync.system.pipeline.transform.v580.AuthorizationCodeDataTransformerV580;
+import org.wso2.is.data.sync.system.pipeline.transform.v580.OAuthTokenDataTransformerV580;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+
 import javax.sql.DataSource;
 
+/**
+ * SyncService.
+ */
 public class SyncService {
 
     private Configuration configuration;
@@ -75,7 +77,7 @@ public class SyncService {
 
             DataTransformerFactory factory = new DataTransformerFactory(dataTransformers);
             PipelineConfiguration pipelineConfiguration = new PipelineConfiguration(configuration, table, schema,
-                                                                                    sourceDataSource, targetDataSource);
+                    sourceDataSource, targetDataSource);
             DataSyncPipeline dataSyncPipeline = new DataSyncPipeline(factory, pipelineConfiguration);
             dataSyncPipeline.build();
             long syncInterval = configuration.getSyncInterval();
@@ -92,8 +94,10 @@ public class SyncService {
 
         dataTransformers.add(new OAuthTokenDataTransformerV550());
         dataTransformers.add(new OAuthTokenDataTransformerV570());
+        dataTransformers.add(new OAuthTokenDataTransformerV580());
         dataTransformers.add(new AuthorizationCodeDataTransformerV550());
         dataTransformers.add(new AuthorizationCodeDataTransformerV570());
+        dataTransformers.add(new AuthorizationCodeDataTransformerV580());
     }
 
     public void generateScripts(boolean ddlOnly) throws SyncClientException {

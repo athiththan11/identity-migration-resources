@@ -20,18 +20,24 @@ package org.wso2.carbon.is.migration.service.v570.migrator;
 
 import org.apache.axiom.om.OMElement;
 import org.apache.axiom.om.impl.builder.StAXOMBuilder;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
+import org.wso2.carbon.database.utils.jdbc.JdbcTemplate;
+import org.wso2.carbon.database.utils.jdbc.exceptions.TransactionException;
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
 import org.wso2.carbon.identity.core.util.IdentityIOStreamUtils;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
+import org.wso2.carbon.identity.core.util.LambdaExceptionUtils;
 import org.wso2.carbon.identity.oauth.dto.ScopeDTO;
 import org.wso2.carbon.identity.oauth2.IdentityOAuth2Exception;
-import org.wso2.carbon.identity.oauth2.dao.OAuthTokenPersistenceFactory;
 import org.wso2.carbon.is.migration.service.Migrator;
+import org.wso2.carbon.is.migration.service.v570.dao.OIDCScopeDAO;
 import org.wso2.carbon.is.migration.util.Constant;
+import org.wso2.carbon.is.migration.util.Schema;
 import org.wso2.carbon.is.migration.util.Utility;
 import org.wso2.carbon.registry.core.service.RegistryService;
 import org.wso2.carbon.user.api.Tenant;
@@ -41,12 +47,15 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+
 import javax.xml.namespace.QName;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -56,17 +65,45 @@ import static org.wso2.carbon.base.MultitenantConstants.SUPER_TENANT_DOMAIN_NAME
 import static org.wso2.carbon.base.MultitenantConstants.SUPER_TENANT_ID;
 import static org.wso2.carbon.identity.oauth.common.OAuthConstants.SCOPE_RESOURCE_PATH;
 
+/**
+ * OIDCScopeDataMigrator.
+ */
 public class OIDCScopeDataMigrator extends Migrator {
 
-    private static final Log log = LogFactory.getLog(OIDCScopeDataMigrator.class);
+    private static final Logger log = LoggerFactory.getLogger(OIDCScopeDataMigrator.class);
     private static final String OIDC_SCOPE_CONFIG_PATH = "oidc-scope-config.xml";
     private static final String SCOPE_CLAIM_SEPERATOR = ",";
     private static final String ID = "id";
     private static final String CLAIM = "Claim";
+
     private Map<String, String> scopeConfigFile = null;
+
+    private static String loadClaimConfig(OMElement configElement) {
+
+        StringBuilder claimConfig = new StringBuilder();
+        Iterator it = configElement.getChildElements();
+        while (it.hasNext()) {
+            OMElement element = (OMElement) it.next();
+            if (CLAIM.equals(element.getLocalName())) {
+                String commaSeparatedClaimNames = element.getText();
+                if (StringUtils.isNotBlank(commaSeparatedClaimNames)) {
+                    claimConfig.append(commaSeparatedClaimNames.trim());
+                }
+            }
+        }
+        return claimConfig.toString();
+    }
+
     @Override
     public void migrate() throws MigrationClientException {
+
         migrateOIDCScopes();
+    }
+
+    @Override
+    public void dryRun() throws MigrationClientException {
+
+        log.info("Dry run capability not implemented in {} migrator.", this.getClass().getName());
     }
 
     public void migrateOIDCScopes() throws MigrationClientException {
@@ -83,7 +120,8 @@ public class OIDCScopeDataMigrator extends Migrator {
             for (Tenant tenant : tenants) {
                 log.info(Constant.MIGRATION_LOG + "Started to migrate OIDC scopes for tenant: " + tenant.getDomain());
                 if (isIgnoreForInactiveTenants() && !tenant.isActive()) {
-                    log.info(Constant.MIGRATION_LOG + "Tenant " + tenant.getDomain() + " is inactive. Skipping oidc scope migration. ");
+                    log.info(Constant.MIGRATION_LOG + "Tenant " + tenant.getDomain()
+                            + " is inactive. Skipping oidc scope migration. ");
                     continue;
                 }
                 Properties scopes = getOIDCScopeProperties(tenant.getDomain());
@@ -100,10 +138,12 @@ public class OIDCScopeDataMigrator extends Migrator {
     }
 
     protected void addScopes(Properties properties, int tenantId) throws MigrationClientException {
+
         try {
+            OIDCScopeDAO oidcScopeDAO = new OIDCScopeDAO(getDataSource(Schema.IDENTITY.getName()));
             appendAdditionalProperties(properties);
             List<ScopeDTO> scopeDTOs = getScopeDTOs(properties);
-            OAuthTokenPersistenceFactory.getInstance().getScopeClaimMappingDAO().addScopes(tenantId, scopeDTOs);
+            oidcScopeDAO.addScopes(tenantId, scopeDTOs);
         } catch (IdentityOAuth2Exception e) {
             if (e.getMessage() != null && e.getMessage().contains("Duplicate scopes can not be added")) {
                 log.warn("OIDC scopes are already added to the tenant: " + tenantId);
@@ -155,8 +195,8 @@ public class OIDCScopeDataMigrator extends Migrator {
                 propertiesToReturn.setProperty(propertyKey, oidcScopesResource.getProperty(propertyKey));
             }
         } else {
-            log.error(Constant.MIGRATION_LOG + "OIDC scope resource cannot be found at " + SCOPE_RESOURCE_PATH + " for tenantDomain: "
-                    + tenantDomain);
+            log.error(Constant.MIGRATION_LOG + "OIDC scope resource cannot be found at " + SCOPE_RESOURCE_PATH
+                    + " for tenantDomain: " + tenantDomain);
         }
         return propertiesToReturn;
     }
@@ -176,11 +216,13 @@ public class OIDCScopeDataMigrator extends Migrator {
             File configfile = new File(confXml);
             if (!configfile.exists()) {
                 if (log.isDebugEnabled()) {
-                    log.debug(Constant.MIGRATION_LOG + "Additional OIDC scope-claim Configuration File is not present at: " + confXml);
+                    log.debug(Constant.MIGRATION_LOG + "Additional OIDC scope-claim Configuration File " +
+                            "is not present at: " + confXml);
                 }
             } else {
                 if (log.isDebugEnabled()) {
-                    log.debug(Constant.MIGRATION_LOG + "Additional OIDC scope-claim Configuration File is present at: " + confXml);
+                    log.debug(Constant.MIGRATION_LOG + "Additional OIDC scope-claim Configuration File is present at: "
+                            + confXml);
                 }
                 scopeConfigFile = loadScopeConfigFile(configfile);
             }
@@ -189,13 +231,14 @@ public class OIDCScopeDataMigrator extends Migrator {
         if (scopeConfigFile != null) {
             for (Map.Entry<String, String> entry : scopeConfigFile.entrySet()) {
                 if (properties.getProperty(entry.getKey()) != null) {
-                    properties.setProperty(entry.getKey(), properties.getProperty(entry.getKey()) + SCOPE_CLAIM_SEPERATOR + entry.getValue());
+                    properties.setProperty(entry.getKey(), properties.getProperty(entry.getKey())
+                            + SCOPE_CLAIM_SEPERATOR + entry.getValue());
                 }
             }
         }
     }
 
-    private  Map<String, String> loadScopeConfigFile(File configfile) {
+    private Map<String, String> loadScopeConfigFile(File configfile) {
 
         Map<String, String> scopes = new HashMap<>();
         XMLStreamReader parser = null;
@@ -229,20 +272,5 @@ public class OIDCScopeDataMigrator extends Migrator {
             }
         }
         return scopes;
-    }
-
-    private static String loadClaimConfig(OMElement configElement) {
-        StringBuilder claimConfig = new StringBuilder();
-        Iterator it = configElement.getChildElements();
-        while (it.hasNext()) {
-            OMElement element = (OMElement) it.next();
-            if (CLAIM.equals(element.getLocalName())) {
-                String commaSeparatedClaimNames = element.getText();
-                if(StringUtils.isNotBlank(commaSeparatedClaimNames)){
-                    claimConfig.append(commaSeparatedClaimNames.trim());
-                }
-            }
-        }
-        return claimConfig.toString();
     }
 }

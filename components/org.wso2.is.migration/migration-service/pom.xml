@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.wso2.carbon.identity.migration.resources</groupId>
         <artifactId>identity-migration-resources</artifactId>
-        <version>1.0.71-SNAPSHOT</version>
+        <version>1.0.103-SNAPSHOT</version>
         <relativePath>../../../pom.xml</relativePath>
     </parent>
 
@@ -43,10 +43,6 @@
         <dependency>
             <groupId>org.wso2.carbon</groupId>
             <artifactId>org.wso2.carbon.core.services</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.wso2.carbon</groupId>
-            <artifactId>org.wso2.carbon.logging</artifactId>
         </dependency>
         <dependency>
             <groupId>org.wso2.carbon</groupId>
@@ -146,7 +142,7 @@
                         <id>migration</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>attached</goal>
+                            <goal>single</goal>
                         </goals>
                         <configuration>
                             <descriptors>
